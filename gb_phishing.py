@@ -4,7 +4,8 @@ import whois
 import socket
 from urllib.parse import urlparse, urljoin
 import re
-import json # Required for VirusTotal
+from datetime import datetime, timedelta # For domain age calculation
+import time # For retry mechanism
 
 # --- CORE FUNCTIONS ---
 
@@ -16,7 +17,7 @@ def get_html_content(url):
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
         response = requests.get(url, headers=headers, timeout=15, allow_redirects=True, verify=True)
-        response.raise_for_status() # Raises HTTPError for bad responses (4xx or 5xx)
+        response.raise_for_status() # Raises HTTPError for 4xx/5xx status codes
         return response.text
     except requests.exceptions.RequestException as e:
         print(f"[-] Error retrieving web content from {url}: {e}")
@@ -30,24 +31,39 @@ def analyze_html_clues(html_content, base_url):
     soup = BeautifulSoup(html_content, 'html.parser')
     clues = {}
 
-    # --- Form Action URLs ---
-    # Identifies where form data might be submitted, a key indicator for phishing.
-    form_submission_urls = []
+    # --- Form Analysis (More Sharpened) ---
+    form_details = []
     forms = soup.find_all('form')
     if forms:
-        for form in forms:
-            action = form.get('action')
-            if action:
-                full_action_url = urljoin(base_url, action) # Resolve relative URLs
-                form_submission_urls.append(full_action_url)
-            else:
-                form_submission_urls.append(base_url) # If no action, defaults to current page
-        clues['form_submission_urls'] = list(set(form_submission_urls)) # Remove duplicates
+        for i, form in enumerate(forms):
+            form_action = form.get('action', '')
+            form_method = form.get('method', 'GET').upper() # Default to GET if not specified
+
+            full_action_url = urljoin(base_url, form_action)
+
+            form_entry = {
+                f"Form {i+1} Action": full_action_url,
+                f"Form {i+1} Method": form_method
+            }
+
+            # Check for suspicious action URLs
+            if not form_action or form_action == '#' or form_action.startswith('javascript:'):
+                form_entry[f"Form {i+1} Suspicious Action"] = "Likely handled by JavaScript or points to self (common in phishing)"
+            elif urlparse(full_action_url).netloc != urlparse(base_url).netloc:
+                form_entry[f"Form {i+1} Suspicious Action"] = "Submitting to external domain (potential phishing)"
+
+            # Check for hidden input fields (optional detail, can be verbose)
+            hidden_inputs = form.find_all('input', type='hidden')
+            if hidden_inputs:
+                hidden_field_names = [inp.get('name') for inp in hidden_inputs if inp.get('name')]
+                form_entry[f"Form {i+1} Hidden Fields"] = hidden_field_names if hidden_field_names else "None"
+
+            form_details.append(form_entry)
+        clues['form_analysis'] = form_details
     else:
-        clues['form_submission_urls'] = ["No <form> tags found."]
+        clues['form_analysis'] = ["No <form> tags found."]
 
     # --- Input Fields Analysis for Target Data Type Identification ---
-    # Detects common input field names to infer what type of data the page is trying to collect.
     potential_data_targets = set()
     input_field_names = []
     for input_tag in soup.find_all(['input', 'textarea', 'select']):
@@ -55,47 +71,60 @@ def analyze_html_clues(html_content, base_url):
         if name:
             input_field_names.append(name.lower())
             # Keywords indicating credential collection
-            if any(k in name.lower() for k in ['user', 'email', 'login', 'account']):
+            if any(k in name.lower() for k in ['user', 'email', 'login', 'account', 'username', 'e-mail']):
                 potential_data_targets.add("Credentials (Username/Email)")
-            if any(k in name.lower() for k in ['pass', 'pwd', 'sandi']):
+            if any(k in name.lower() for k in ['pass', 'pwd', 'sandi', 'password', 'kata_sandi']):
                 potential_data_targets.add("Credentials (Password)")
             # Keywords indicating financial/payment information
-            if any(k in name.lower() for k in ['card', 'cc', 'kartu', 'nomor_kartu']):
+            if any(k in name.lower() for k in ['card', 'cc', 'kartu', 'nomor_kartu', 'credit_card', 'kartu_kredit']):
                 potential_data_targets.add("Credit Card/Payment Information")
-            if any(k in name.lower() for k in ['cvv', 'cvc', 'kode_verifikasi']):
+            if any(k in name.lower() for k in ['cvv', 'cvc', 'kode_verifikasi', 'security_code']):
                 potential_data_targets.add("CVV/CVC Credit Card")
-            if any(k in name.lower() for k in ['otp', 'token', 'kode_otp']):
+            if any(k in name.lower() for k in ['otp', 'token', 'kode_otp', 'one_time_password']):
                 potential_data_targets.add("OTP/Verification Code")
             # Keywords indicating personal identification details (specific to Indonesia)
-            if any(k in name.lower() for k in ['nik', 'ktp', 'identitas']):
+            if any(k in name.lower() for k in ['nik', 'ktp', 'identitas', 'npwp', 'paspor']):
                 potential_data_targets.add("NIK/KTP/Personal Identity")
-            if any(k in name.lower() for k in ['rekening', 'bank', 'norek']):
+            if any(k in name.lower() for k in ['rekening', 'bank', 'norek', 'nomor_rekening', 'swift']):
                 potential_data_targets.add("Bank Account Information")
+            if any(k in name.lower() for k in ['pin']):
+                potential_data_targets.add("PIN (Personal Identification Number)")
+            if any(k in name.lower() for k in ['alamat', 'address', 'jalan', 'kota', 'provinsi']):
+                potential_data_targets.add("Personal Address")
+            if any(k in name.lower() for k in ['phone', 'telp', 'nomor_telepon']):
+                potential_data_targets.add("Phone Number")
     clues['input_field_names_found'] = list(set(input_field_names))
     clues['potential_data_targets'] = list(potential_data_targets)
 
     # --- External Link Analysis ---
-    # Identifies links pointing to domains different from the base URL.
-    # Phishing sites often link to legitimate pages (e.g., privacy policy) to appear credible.
     external_links = []
     for a_tag in soup.find_all('a', href=True):
         href = a_tag['href']
+        # Also check mailto: and tel: for suspicious contact points
         if href.startswith('http') and urlparse(href).netloc != urlparse(base_url).netloc:
             external_links.append(href)
+        elif href.startswith('mailto:') or href.startswith('tel:'):
+            external_links.append(href) # Treat as external contact point
     clues['external_links'] = list(set(external_links))
 
-    # --- Keyword Analysis in Text Content ---
-    # Scans the page's text for common phishing phrases that aim to create urgency or deception.
+    # --- Keyword Analysis in Text Content (Expanded Keywords) ---
     page_text = soup.get_text().lower()
     phishing_keywords_indicator = []
     common_phishing_phrases = [
         "verify account", "update information", "activate now", "your account has been suspended",
         "prize", "winner", "login now", "click here", "confirm", "urgent",
         "inactive", "block", "important", "this email", "update data",
+        "security alert", "suspicious activity", "action required", "immediately",
+        "limited time offer", "unauthorized access", "failed login", "billing issue",
+        "account review", "upgrade now", "download", "install",
         # Indonesian keywords for broader detection
         "verifikasi akun", "perbarui informasi", "aktivasi sekarang", "akun anda ditangguhkan",
         "hadiah", "pemenang", "login sekarang", "klik di sini", "konfirmasi", "urgent",
-        "tidak aktif", "blokir", "penting", "email ini", "update data"
+        "tidak aktif", "blokir", "penting", "email ini", "update data",
+        "peringatan keamanan", "aktivitas mencurigakan", "tindakan diperlukan", "segera",
+        "penawaran terbatas", "akses tidak sah", "gagal masuk", "masalah pembayaran",
+        "peninjauan akun", "tingkatkan sekarang", "unduh", "pasang",
+        "informasi rekening", "data pribadi", "data keuangan", "kartu bank", "bukti transfer"
     ]
     for phrase in common_phishing_phrases:
         if phrase in page_text:
@@ -103,7 +132,6 @@ def analyze_html_clues(html_content, base_url):
     clues['phishing_keywords_in_text'] = phishing_keywords_indicator if phishing_keywords_indicator else "No common phishing keywords found"
 
     # --- Analyze Redirects in Meta Tags or JavaScript ---
-    # Checks for static HTML meta refresh tags.
     meta_refresh = soup.find('meta', attrs={'http-equiv': re.compile(r'refresh', re.IGNORECASE)})
     if meta_refresh and 'content' in meta_refresh.attrs:
         content_value = meta_refresh['content']
@@ -111,7 +139,6 @@ def analyze_html_clues(html_content, base_url):
         if match:
             clues['meta_refresh_redirect'] = urljoin(base_url, match.group(1))
 
-    # Checks for basic JavaScript redirects (static analysis only).
     js_redirect_clues = []
     for script_tag in soup.find_all('script'):
         if script_tag.string:
@@ -126,110 +153,111 @@ def get_domain_ip_info(url):
     """
     Analyzes domain, IP address, and WHOIS information from a given URL.
     WHOIS data can reveal domain age, registrar, and owner details, which are often suspicious for phishing sites.
+    Includes retry mechanism for WHOIS lookup.
     """
     domain_info = {}
-    try:
-        parsed_url = urlparse(url)
-        domain = parsed_url.netloc
+    parsed_url = urlparse(url)
+    domain = parsed_url.netloc
 
-        if domain:
-            try:
-                w = whois.whois(domain)
-                domain_info['domain_name'] = w.domain_name
-                domain_info['creation_date'] = w.creation_date
-                domain_info['expiration_date'] = w.expiration_date
-                domain_info['registrar'] = w.registrar
-                domain_info['whois_server'] = w.whois_server
-                domain_info['name_servers'] = w.name_servers
-            except Exception as we:
-                domain_info['whois_data'] = f"Error WHOIS lookup: {we}"
+    if not domain:
+        domain_info['error'] = "Could not extract domain from URL."
+        return domain_info
 
-            try:
-                ip_address = socket.gethostbyname(domain)
-                domain_info['ip_address'] = ip_address
-            except socket.gaierror:
-                domain_info['ip_address'] = "Could not find IP (Unknown hostname)"
-
-            # Note: For GeoIP, integration with an external API/DB (e.g., ipinfo.io) is needed.
-            domain_info['geoip_info'] = "For GeoIP, integration with external API/DB (e.g., ipinfo.io) is needed."
-
-        else:
-            domain_info['error'] = "Could not extract domain from URL."
-
-    except Exception as e:
-        domain_info['error'] = f"Error analyzing domain/IP: {e}"
-    return domain_info
-
-def virustotal_url_scan(url, api_key):
-    """
-    Submits a URL to VirusTotal for analysis and retrieves results.
-    Requires a valid VirusTotal API key.
-    """
-    if not api_key: # Check if API Key is empty
-        print("\n[!] VirusTotal API Key not provided. Skipping VirusTotal scan.")
-        return None
-
-    print(f"\n[+] Submitting URL to VirusTotal: {url}")
-    vt_url_submit = "https://www.virustotal.com/api/v3/urls"
-    vt_url_report = "https://www.virustotal.com/api/v3/analyses/"
-
-    headers = {
-        "x-apikey": api_key,
-        "Content-Type": "application/x-www-form-urlencoded"
-    }
-    data = {"url": url}
-
-    try:
-        # Submit URL for analysis
-        response = requests.post(vt_url_submit, headers=headers, data=data)
-        response.raise_for_status() # Will raise HTTPError for 4xx/5xx status codes
-        result = response.json()
-        analysis_id = result['data']['id']
-        print(f"[+] URL submitted to VirusTotal. Analysis ID: {analysis_id}")
-        print("[+] Waiting for VirusTotal analysis results (this may take a moment)...")
-
-        # Poll for results
-        max_retries = 10
-        import time # Import time here as it's only used within this function
-        for i in range(max_retries):
-            report_response = requests.get(f"{vt_url_report}{analysis_id}", headers=headers)
-            report_response.raise_for_status()
-            report_data = report_response.json()
-            status = report_data['data']['attributes']['status']
-
-            if status == "completed":
-                stats = report_data['data']['attributes']['stats']
-                print(f"[+] VirusTotal Analysis Complete:")
-                print(f"    - Malicious: {stats.get('malicious', 0)}")
-                print(f"    - Suspicious: {stats.get('suspicious', 0)}")
-                print(f"    - Harmless: {stats.get('harmless', 0)}")
-                print(f"    - Undetected: {stats.get('undetected', 0)}")
-                print(f"    - Timeout: {stats.get('timeout', 0)}")
-                return stats
-            elif status == "queued" or status == "not_found":
-                print(f"    Still {status}... Retrying in 5 seconds ({i+1}/{max_retries})")
-                time.sleep(5)
+    # --- WHOIS Lookup with Retry Mechanism ---
+    max_retries = 3
+    retry_delay = 2 # seconds, will be multiplied for exponential backoff
+    whois_data_retrieved = False
+    
+    for attempt in range(max_retries):
+        try:
+            print(f"[*] Attempting WHOIS lookup for {domain} (Attempt {attempt + 1}/{max_retries})...")
+            w = whois.whois(domain)
+            whois_data_retrieved = True
+            
+            # Ensure attributes exist before accessing
+            domain_info['domain_name'] = w.domain_name if w and w.domain_name else "N/A (Data Not Found)"
+            
+            creation_date = w.creation_date
+            if isinstance(creation_date, list): # whois library sometimes returns a list
+                creation_date = creation_date[0] if creation_date else None
+            
+            domain_info['creation_date'] = creation_date if creation_date else "N/A (Data Not Found)"
+            domain_info['expiration_date'] = w.expiration_date if w and w.expiration_date else "N/A (Data Not Found)"
+            domain_info['registrar'] = w.registrar if w and w.registrar else "N/A (Data Not Found)"
+            domain_info['whois_server'] = w.whois_server if w and w.whois_server else "N/A (Data Not Found)"
+            domain_info['name_servers'] = w.name_servers if w and w.name_servers else "N/A (Data Not Found)"
+            
+            # --- Domain Age Check ---
+            if creation_date and isinstance(creation_date, datetime):
+                age_days = (datetime.now() - creation_date).days
+                domain_info['domain_age_days'] = age_days
+                if age_days < 90: # Typically, phishing domains are very new (e.g., < 3 months)
+                    domain_info['domain_age_suspicion'] = "Very New Domain (Less than 90 days old) - HIGH PHISHING INDICATOR"
+                else:
+                    domain_info['domain_age_suspicion'] = "Domain appears established (Older than 90 days)"
             else:
-                print(f"    Unknown status: {status}")
-                break
-        print("[-] VirusTotal analysis timed out or failed to complete.")
-        return None
-    except requests.exceptions.RequestException as e:
-        print(f"[-] Error with VirusTotal API: {e}")
-        return None
-    except json.JSONDecodeError:
-        print("[-] Error decoding JSON response from VirusTotal. Check API Key or response format.")
-        return None
-    except Exception as e:
-        print(f"[-] An unexpected error occurred during VirusTotal scan: {e}")
-        return None
+                domain_info['domain_age_suspicion'] = "Could not determine domain age (creation date N/A or invalid)"
+
+            # --- Privacy/Proxy Service Check ---
+            registrar_lower = str(domain_info['registrar']).lower()
+            if any(keyword in registrar_lower for keyword in ['privacy', 'proxy', 'anonymity', 'shield', 'whoisguard', 'domainsbyproxy']):
+                domain_info['registrar_privacy_service'] = "Registrar indicates privacy/proxy service (Potential Red Flag)"
+            else:
+                domain_info['registrar_privacy_service'] = "No obvious privacy/proxy service detected"
+
+            break # Exit retry loop if successful
+
+        except whois.parser.PywhoisError as we_parse:
+            domain_info['whois_data'] = f"WHOIS parsing error for {domain}: {we_parse}. Data might be incomplete or malformed."
+            print(f"[-] WHOIS parsing error: {we_parse}")
+            # Do not retry on parsing error, as it's likely data format issue
+            break 
+        except whois.whois.WhoisLookupError as wle:
+            domain_info['whois_data'] = f"WHOIS lookup failed for {domain}: {wle}. Domain might not exist or WHOIS server is unavailable."
+            print(f"[-] WHOIS lookup error: {wle}")
+            # This indicates domain not found or server issue, retrying might help
+            if attempt < max_retries - 1:
+                print(f"[*] Retrying in {retry_delay * (2**attempt)} seconds...")
+                time.sleep(retry_delay * (2**attempt))
+            else:
+                print(f"[-] Max retries reached for WHOIS lookup.")
+        except Exception as we:
+            domain_info['whois_data'] = f"General WHOIS error for {domain}: {we}. Could be network or server issue."
+            print(f"[-] General WHOIS error: {we}")
+            if attempt < max_retries - 1:
+                print(f"[*] Retrying in {retry_delay * (2**attempt)} seconds...")
+                time.sleep(retry_delay * (2**attempt))
+            else:
+                print(f"[-] Max retries reached for WHOIS lookup.")
+    
+    if not whois_data_retrieved and 'whois_data' not in domain_info:
+        domain_info['whois_data'] = "WHOIS data could not be retrieved after multiple attempts."
+
+
+    # --- IP Address Lookup ---
+    try:
+        ip_address = socket.gethostbyname(domain)
+        domain_info['ip_address'] = ip_address
+    except socket.gaierror:
+        domain_info['ip_address'] = "Could not find IP (Unknown hostname or domain does not resolve)"
+
+    domain_info['geoip_info'] = "For GeoIP, integration with external API/DB (e.g., ipinfo.io) is needed."
+
+    return domain_info
 
 def print_results(section_title, data):
     """Helper function for printing results neatly."""
     print(f"\n--- {section_title} ---")
     if data:
         for key, value in data.items():
-            if isinstance(value, list) and not value:
+            # Special handling for form_analysis to print sub-dictionaries neatly
+            if key == 'form_analysis' and isinstance(value, list):
+                print(f"  - {key}:")
+                for form_entry in value:
+                    print(f"    --- Form Entry ---")
+                    for sub_key, sub_value in form_entry.items():
+                        print(f"      - {sub_key}: {sub_value}")
+            elif isinstance(value, list) and not value:
                 print(f"  - {key}: [] (Empty)")
             elif isinstance(value, list):
                 print(f"  - {key}:")
@@ -242,17 +270,24 @@ def print_results(section_title, data):
 
 def print_banner():
     """Prints the tool's ASCII art banner."""
-    print("  ▄████  ▒█████   ▒█████  ▓█████▄     ▄▄▄▄   ▓██   ██▓▓█████     ██▓███   ██░ ██  ██▓  ██████  ██▓ ███▄    █   ▄████     █     █░▓█████  ▄▄▄▄   ")
-    print(" ██▒ ▀█▒▒██▒  ██▒▒██▒  ██▒▒██▀ ██▌   ▓█████▄  ▒██  ██▒▓█   ▀    ▓██░  ██▒▓██░ ██▒▓██▒▒██    ▒ ▓██▒ ██ ▀█   █  ██▒ ▀█▒   ▓█░ █ ░█░▓█   ▀ ▓█████▄ ")
-    print("▒██░▄▄▄░▒██░  ██▒▒██░  ██▒░██   █▌   ▒██▒ ▄██  ▒██ ██░▒███      ▓██░ ██▓▒▒██▀▀██░▒██▒░ ▓██▄   ▒██▒▓██  ▀█ ██▒▒██░▄▄▄░   ▒█░ █ ░█ ▒███   ▒██▒ ▄██")
-    print("░▓█  ██▓▒██   ██░▒██   ██░░▓█▄   ▌   ▒██░█▀    ░ ▐██▓░▒▓█  ▄    ▒██▄█▓▒ ▒░▓█ ░██ ░██░  ▒   ██▒░██░▓██▒  ▐▌██▒░▓█  ██▓   ░█░ █ ░█ ▒▓█  ▄ ▒██░█▀  ")
-    print("░▒▓███▀▒░ ████▓▒░░ ████▓▒░░▒████▓    ░▓█  ▀█▓  ░ ██▒▓░░▒████▒   ▒██▒ ░  ░░▓█▒░██▓░██░▒██████▒▒░██░▒██░   ▓██░░▒▓███▀▒   ░░██▒██▓ ░▒████▒░▓█  ▀█▓")
-    print(" ░▒   ▒ ░ ▒░▒░▒░ ░ ▒░▒░▒░  ▒▒▓  ▒    ░▒▓███▀▒   ██▒▒▒ ░░ ▒░ ░   ░▓▒░ ░  ░ ▒ ░░▒░▒░▓  ▒ ▒▓▒ ▒ ░░▓  ░ ▒░   ▒ ▒  ░▒   ▒    ░ ▓░▒ ▒  ░░ ▒░ ░░▒▓███▀▒")
-    print("  ░   ░   ░ ▒ ▒░   ░ ▒ ▒░  ░ ▒  ▒    ▒░▒   ░  ▓██ ░▒░  ░ ░  ░   ░▒ ░      ▒ ░▒░ ░ ▒ ░░ ░▒  ░ ░ ▒ ░░ ░░   ░ ▒░  ░   ░      ▒ ░ ░   ░ ░  ░▒░▒   ░ ")
-    print("░ ░   ░ ░ ░ ░ ▒  ░ ░ ░ ▒   ░ ░  ░     ░    ░  ▒ ▒ ░░     ░      ░░        ░  ░░ ░ ▒ ░░  ░  ░   ▒ ░   ░   ░ ░ ░ ░   ░      ░   ░     ░    ░    ░ ")
-    print("      ░     ░ ░      ░ ░     ░        ░       ░ ░        ░  ░             ░  ░  ░ ░        ░   ░           ░       ░        ░       ░  ░ ░      ")
-    print("                           ░               ░  ░ ░                                                                                             ░ ")
-    print("        [+] GB Phishing (Good Bye Phishing) Analyzer by [DieHukShoo] [+]\n")
+    print(r"""
+  _______   ______     ______    _______     .______   ____    ____  _______                                       
+ /  _____| /  __  \   /  __  \  |       \    |   _  \  \   \  /   / |   ____|                                      
+|  |  __  |  |  |  | |  |  |  | |  .--.  |   |  |_)  |  \   \/   /  |  |__                                         
+|  | |_ | |  |  |  | |  |  |  | |  |  |  |   |   _  <    \_    _/   |   __|                                        
+|  |__| | |  `--'  | |  `--'  | |  '--'  |   |  |_)  |     |  |     |  |____                                       
+ \______|  \______/   \______/  |_______/    |______/      |__|     |_______|                                      
+                                                                                                                   
+.______    __    __   __       _______. __    __   __  .__   __.   _______    ____    __    ____  _______ .______  
+|   _  \  |  |  |  | |  |     /       ||  |  |  | |  | |  \ |  |  /  _____|   \   \  /  \  /   / |   ____||   _  \ 
+|  |_)  | |  |__|  | |  |    |   (----`|  |__|  | |  | |   \|  | |  |  __      \   \/    \/   /  |  |__   |  |_)  |
+|   ___/  |   __   | |  |     \   \    |   __   | |  | |  . `  | |  | |_ |      \            /   |   __|  |   _  < 
+|  |      |  |  |  | |  | .----)   |   |  |  |  | |  | |  |\   | |  |__| |       \    /\    /    |  |____ |  |_)  |
+| _|      |__|  |__| |__| |_______/    |__|  |__| |__| |__| \__|  \______|        \__/  \__/     |_______||______/ 
+ 
+      [+] Good Bye Phishing Web, Web Analyzer by DieHukShoo [+]
+    """)
+
 
 def run_gb_phishing_analyzer():
     """
@@ -287,20 +322,6 @@ def run_gb_phishing_analyzer():
 
         print("\n[+] Core Analysis Complete.")
         
-        # --- Option for Third-Party Application Features with Manual API Key Input ---
-        perform_vt_scan = input("\nDo you want to perform an additional VirusTotal URL scan? (y/n): ").lower()
-        if perform_vt_scan == 'y':
-            api_key_input = input("Enter your VirusTotal API Key (press Enter to skip): ")
-            if not api_key_input:
-                print("[!] No VirusTotal API Key provided. Skipping VirusTotal scan for this session.")
-            else:
-                virustotal_results = virustotal_url_scan(phishing_url, api_key_input)
-                if virustotal_results:
-                    print_results("VirusTotal URL Scan Results", virustotal_results)
-        elif perform_vt_scan != 'n': # If input is neither 'y' nor 'n', inform the user
-            print("[!] Invalid input. Skipping VirusTotal scan.")
-
-
         print("\n[!] Important Warning:")
         print("    - Always perform this analysis in a secure environment (VM/Sandbox)!")
         print("    - These results are preliminary findings; confirmation and manual analysis are still required.")
@@ -312,3 +333,4 @@ def run_gb_phishing_analyzer():
 
 if __name__ == "__main__":
     run_gb_phishing_analyzer()
+
