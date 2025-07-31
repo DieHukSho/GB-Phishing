@@ -41,7 +41,6 @@ def analyze_html_clues(html_content, phishing_url):
     return clues
 
     # --- Form Analysis ---
->>>>>>> b2196f5 (Update: Refined form analysis logic and improved WHOIS retry/data handling)
     form_details = []
     forms = soup.find_all('form')
     if forms:
