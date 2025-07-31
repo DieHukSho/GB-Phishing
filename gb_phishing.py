@@ -8,7 +8,6 @@ from datetime import datetime, timedelta # For domain age calculation
 import time # For retry mechanism
 
 # --- CORE FUNCTIONS ---
-
 def get_html_content(url):
     """
     Retrieves HTML content from a given URL using basic requests (no JavaScript rendering).
@@ -22,16 +21,27 @@ def get_html_content(url):
     except requests.exceptions.RequestException as e:
         print(f"[-] Error retrieving web content from {url}: {e}")
         return None
-
-def analyze_html_clues(html_content, base_url):
-    """
-    Analyzes HTML content for common phishing clues such as form actions,
-    input field names, external links, and suspicious keywords.
-    """
-    soup = BeautifulSoup(html_content, 'html.parser')
+    
+def analyze_html_clues(html_content, phishing_url):
     clues = {}
-
     # --- Form Analysis (More Sharpened) ---
+    # Menambahkan analisis URL sebagai petunjuk
+    clues['url_analysis'] = [{'URL Analysis': phishing_url}]
+
+    # Analisis Form
+    if "<form" not in html_content:
+        clues['form_analysis'] = [{'Form Analysis': "No <form> tags found."}]
+    else:
+        clues['form_analysis'] = [{'Form Analysis': "Form tag detected, possibly collecting credentials."}]
+
+    # Analisis Script mencurigakan
+    if "eval(" in html_content or "escape(" in html_content:
+        clues['script_analysis'] = [{'Script Analysis': "Suspicious JavaScript functions found (e.g., eval, escape)."}]
+
+    return clues
+
+    # --- Form Analysis ---
+>>>>>>> b2196f5 (Update: Refined form analysis logic and improved WHOIS retry/data handling)
     form_details = []
     forms = soup.find_all('form')
     if forms:
@@ -150,6 +160,7 @@ def analyze_html_clues(html_content, base_url):
     return clues
 
 def get_domain_ip_info(url):
+    clues = {}
     """
     Analyzes domain, IP address, and WHOIS information from a given URL.
     WHOIS data can reveal domain age, registrar, and owner details, which are often suspicious for phishing sites.
@@ -241,7 +252,7 @@ def get_domain_ip_info(url):
     except socket.gaierror:
         domain_info['ip_address'] = "Could not find IP (Unknown hostname or domain does not resolve)"
 
-    domain_info['geoip_info'] = "For GeoIP, integration with external API/DB (e.g., ipinfo.io) is needed."
+        domain_info['geoip_info'] = "For GeoIP, integration with external API/DB (e.g., ipinfo.io) is needed."
 
     return domain_info
 
@@ -257,6 +268,18 @@ def print_results(section_title, data):
                     print(f"    --- Form Entry ---")
                     for sub_key, sub_value in form_entry.items():
                         print(f"      - {sub_key}: {sub_value}")
+            if key == 'form_analysis': # Check if the key is 'form_analysis'
+                if isinstance(value, list): # If it's a list (expected format for details)
+                    print(f"  - {key}:")
+                    for form_entry in value:
+                        if isinstance(form_entry, dict): # Ensure each entry is a dict
+                            print(f"    --- Form Entry ---")
+                            for sub_key, sub_value in form_entry.items():
+                                print(f"      - {sub_key}: {sub_value}")
+                        else: # Handle cases where it's not a dict, e.g., "No <form> tags found." string
+                            print(f"    - {form_entry}")
+                else: # If form_analysis is not a list (e.g., a string like "No <form> tags found.")
+                    print(f"  - {key}: {value}")
             elif isinstance(value, list) and not value:
                 print(f"  - {key}: [] (Empty)")
             elif isinstance(value, list):
