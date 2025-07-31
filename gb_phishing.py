@@ -338,14 +338,13 @@ def run_gb_phishing_analyzer():
 
         html_analysis_results = analyze_html_clues(html_content, phishing_url)
         print_results("HTML Content & Phishing Element Analysis", html_analysis_results)
-
         domain_ip_results = get_domain_ip_info(phishing_url)
         print_results("Domain & IP Analysis", domain_ip_results)
 
         print("\n[+] Core Analysis Complete.")
         
         print("\n[!] Important Warning:")
-        print("    - Always perform this analysis in a secure environment (VM/Sandbox)!")
+        print("    - Always perform this analysis in a secure environment (VM/Sandbox), and try using VPN !")
         print("    - These results are preliminary findings; confirmation and manual analysis are still required.")
         
         # Return to the tool's main prompt

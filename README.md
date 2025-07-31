@@ -1,4 +1,4 @@
-# GB-Phishing Analyzer
+# Good Bye Phishing Web 
 
 ![Python Version](https://img.shields.io/badge/Python-3.x-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
@@ -77,19 +77,7 @@ Follow the steps below to set up and run this tool in your local environment.
     ```
 Example Output
 
-  _______   ______     ______    _______     .______   ____    ____  _______                                       
- /  _____| /  __  \   /  __  \  |       \    |   _  \  \   \  /   / |   ____|                                      
-|  |  __  |  |  |  | |  |  |  | |  .--.  |   |  |_)  |  \   \/   /  |  |__                                         
-|  | |_ | |  |  |  | |  |  |  | |  |  |  |   |   _  <    \_    _/   |   __|                                        
-|  |__| | |  `--'  | |  `--'  | |  '--'  |   |  |_)  |     |  |     |  |____                                       
- \______|  \______/   \______/  |_______/    |______/      |__|     |_______|                                      
-                                                                                                                   
-.______    __    __   __       _______. __    __   __  .__   __.   _______    ____    __    ____  _______ .______  
-|   _  \  |  |  |  | |  |     /       ||  |  |  | |  | |  \ |  |  /  _____|   \   \  /  \  /   / |   ____||   _  \ 
-|  |_)  | |  |__|  | |  |    |   (----`|  |__|  | |  | |   \|  | |  |  __      \   \/    \/   /  |  |__   |  |_)  |
-|   ___/  |   __   | |  |     \   \    |   __   | |  | |  . `  | |  | |_ |      \            /   |   __|  |   _  < 
-|  |      |  |  |  | |  | .----)   |   |  |  |  | |  | |  |\   | |  |__| |       \    /\    /    |  |____ |  |_)  |
-| _|      |__|  |__| |__| |_______/    |__|  |__| |__| |__| \__|  \______|        \__/  \__/     |_______||______/ 
+              ---- ASCII ART BANNER ----
 
    [+] Good Bye Phishing Web, Web Analyzer by DieHukSho [+]
 
@@ -133,7 +121,7 @@ Enter the Phishing URL to analyze (Example: [https://malicious.com](https://mali
 [+] Core Analysis Complete.
 
 [!] Important Warning:
-    - Always perform this analysis in a secure environment (VM/Sandbox)!
+    - Always perform this analysis in a secure environment (VM/Sandbox), and try using VPN !
     - These results are preliminary findings; confirmation and manual analysis are still required.
 
 Press Enter to analyze another URL or type 'exit' to quit...
