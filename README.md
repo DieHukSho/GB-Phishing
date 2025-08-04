@@ -42,7 +42,7 @@ source venv/bin/activate
 
 pip install -r requirements.txt
 
-🪟 Windows (CMD or PowerShell)
+###🪟 Windows (CMD or PowerShell)
 powershell
 git clone https://github.com/DieHukSho/GB-Phishing.git
 
@@ -62,13 +62,13 @@ Run Set-ExecutionPolicy RemoteSigned -Scope CurrentUser as Administrator.
 bash
 pip install -r requirements.txt
 
-🚀 Usage
+##🚀 Usage
 Once installed and your virtual environment is activated, run:
 bash
 python gb_phishing.py
 
-🙌 Contributing
+##🙌 Contributing
 Pull requests are welcome! If you find bugs or have feature suggestions, feel free to open an issue or submit a PR.
 
-📄 License
+##📄 License
 This project is licensed under the MIT License.
