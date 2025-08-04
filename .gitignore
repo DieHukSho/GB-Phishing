@@ -1,0 +1,19 @@
+# Ignore OS-specific files and directories
+.DS_Store
+*.pyc
+
+# Ignore Python dependencies and environment files
+__pycache__/
+venv/
+env/
+
+# Ignore log files
+*.log
+
+# Ignore IDE specific files
+.idea/
+.vscode/
+
+# Ignore Chrome/Selenium drivers and zip files
+chromedriver-linux64/
+chromedriver-linux64.zip
