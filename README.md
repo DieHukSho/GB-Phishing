@@ -75,7 +75,6 @@ Install the required dependencies:
 pip install -r requirements.txt
 
 Example Output
-
   _______   ______     ______    _______     .______   ____    ____  _______                                       
  /  _____| /  __  \   /  __  \  |       \    |   _  \  \   \  /   / |   ____|                                      
 |  |  __  |  |  |  | |  |  |  | |  .--.  |   |  |_)  |  \   \/   /  |  |__                                         
@@ -88,52 +87,32 @@ Example Output
 |  |_)  | |  |__|  | |  |    |   (----`|  |__|  | |  | |   \|  | |  |  __      \   \/    \/   /  |  |__   |  |_)  |
 |   ___/  |   __   | |  |     \   \    |   __   | |  | |  . `  | |  | |_ |      \            /   |   __|  |   _  < 
 |  |      |  |  |  | |  | .----)   |   |  |  |  | |  | |  |\   | |  |__| |       \    /\    /    |  |____ |  |_)  |
-| _|      |__|  |__| |__| |_______/    |__|  |__| |__| |__| \__|  \______|        \__/  \__/     |_______||______/                                                                                                                     
-                                                                                                                                                                                                                                        
-    [+] Good Bye Phishing Web, Web Analyzer by DieHukShoo [+]                                                                                                                                                                           
-                                                                                                                                                                                                                                        
+| _|      |__|  |__| |__| |_______/    |__|  |__| |__| |__| \__|  \______|        \__/  \__/     |_______||______/ 
+                                                                                                                                     
+[+] Good Bye Phishing Web, Web Analyzer by DieHukShoo [+]                                                                                                                                                                           
+
 Enter a Phishing URL to analyze (Example: https://malicious.com) or type 'exit' to quit: https://quexwakh.top/#/login
-
-[+] Starting analysis for: https://quexwakh.top/#/login
-[+] Using a headless browser to clone: https://quexwakh.top/#/login
-[+] Using a headless browser to clone: https://quexwakh.top/#/login
-[+] Waiting for login elements to appear...
-[!] Timeout: The website took too long to load. Falling back to the classic method.
-[!] Headless browser method failed. Attempting classic method.
-[+] Trying to clone with the classic method (without JavaScript): https://quexwakh.top/#/login
-
+[+] Starting analysis for: https://quexwakh.top/#/login [+] Using a headless browser to clone: https://quexwakh.top/#/login [+] Waiting for login elements to appear... [!] Timeout: The website took too long to load. Falling back to the classic method. [!] Headless browser method failed. Attempting classic method. [+] Trying to clone with the classic method (without JavaScript): https://quexwakh.top/#/login
 --- HTML Content & Phishing Element Analysis ---
-  - url_analysis:
-    - {'URL': 'https://quexwakh.top/#/login'}
-  - form_analysis:
-    - No <form> tags were found.
-  - script_analysis: No suspicious JavaScript functions found.
-  - input_field_names_found: [] (Empty)
-  - potential_data_targets: [] (Empty)
-  - external_links: [] (Empty)
-  - phishing_keywords_in_text: No common phishing keywords found.
-[*] Attempting WHOIS lookup for quexwakh.top (Attempt 1/3)...
-
+url_analysis:{'URL': 'https://quexwakh.top/#/login'}
+form_analysis:No tags were found.
+script_analysis: No suspicious JavaScript functions found.
+input_field_names_found: [] (Empty)
+potential_data_targets: [] (Empty)
+external_links: [] (Empty)
+phishing_keywords_in_text: No common phishing keywords found. [*] Attempting WHOIS lookup for quexwakh.top (Attempt 1/3)...
 --- Domain & IP Analysis ---
-  - domain_name: quexwakh.top
-  - creation_date: 2025-07-16 02:12:55
-  - expiration_date:
-    - 2026-07-16 02:12:55
-    - 2026-07-15 07:00:00
-  - registrar: NameSilo, LLC
-  - whois_server: whois.namesilo.com
-  - name_servers:
-    - ns1.dnsowl.com
-    - ns3.dnsowl.com
-    - ns2.dnsowl.com
-    - NS1.DNSOWL.COM
-    - NS2.DNSOWL.COM
-    - NS3.DNSOWL.COM
-  - domain_age_days: 19
-  - domain_age_suspicion: Very New Domain (Less than 90 days) - HIGH PHISHING INDICATOR
-  - registrar_privacy_service: No privacy/proxy service detected
-  - ip_address: 38.60.198.81
-  - GeoIP Information:
+domain_name: quexwakh.top
+creation_date: 2025-07-16 02:12:55
+expiration_date: 2026-07-16 02:12:55
+registrar: NameSilo, LLC
+whois_server: whois.namesilo.com
+name_servers: ['ns1.dnsowl.com', 'ns2.dnsowl.com', 'ns3.dnsowl.com']
+domain_age_days: 19
+domain_age_suspicion: Very New Domain (Less than 90 days) - HIGH PHISHING INDICATOR
+registrar_privacy_service: No privacy/proxy service detected
+ip_address: 38.60.198.81
+GeoIP Information:
 ╒══════════════╤═════════════════════════════════╕
 │ Field        │ Value                           │
 ╞══════════════╪═════════════════════════════════╡
@@ -161,15 +140,14 @@ Enter a Phishing URL to analyze (Example: https://malicious.com) or type 'exit' 
 --- Analysis Summary ---
 Overall Phishing Risk Level: MEDIUM
 Key Findings:
-* HIGH: The domain is very new (less than 90 days), a common phishing indicator.
-* MEDIUM: The domain uses a privacy protection service, which can be a red flag.
+-   HIGH: The domain is very new (less than 90 days), a common phishing indicator.
+-   MEDIUM: The domain uses a privacy protection service, which can be a red flag.
 
 [!] Important Warning:
-    - Always perform this analysis in a secure environment (VM/Sandbox), and consider using a VPN!
-    - These results are initial findings; manual confirmation and further analysis are still required.
+-   Always perform this analysis in a secure environment (VM/Sandbox), and consider using a VPN!
+-   These results are initial findings; manual confirmation and further analysis are still required.
 
-Press Enter to analyze another URL or type 'exit' to quit...exit
-
+Press Enter to analyze another URL or type 'exit' to quit...
 
 Usage
 Once the installation is complete and your virtual environment is active, you can run the script using the following command:
